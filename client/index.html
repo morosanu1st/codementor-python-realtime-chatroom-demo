@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Python Realtime Chatroom Demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+    #log { border: 1px solid #ccc; height: 280px; overflow-y: auto; padding: 0.75rem; background: #fafafa; }
+    .sys { color: #666; font-style: italic; }
+    .err { color: #b00020; }
+    .row { display: flex; gap: 0.5rem; margin-top: 0.75rem; }
+    input { flex: 1; padding: 0.5rem; }
+    button { padding: 0.5rem 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>Realtime Chatroom Demo</h1>
+  <p>Connect to the Python WebSocket server, join with a username, chat.</p>
+  <div class="row">
+    <input id="name" placeholder="Username" maxlength="32" />
+    <button id="joinBtn">Join</button>
+    <button id="leaveBtn" disabled>Leave</button>
+  </div>
+  <div id="log" aria-live="polite"></div>
+  <div class="row">
+    <input id="msg" placeholder="Message" maxlength="500" disabled />
+    <button id="sendBtn" disabled>Send</button>
+  </div>
+  <script>
+    const WS_URL = "ws://127.0.0.1:8765";
+    let ws = null;
+    const logEl = document.getElementById("log");
+    const nameEl = document.getElementById("name");
+    const msgEl = document.getElementById("msg");
+    const joinBtn = document.getElementById("joinBtn");
+    const leaveBtn = document.getElementById("leaveBtn");
+    const sendBtn = document.getElementById("sendBtn");
+
+    function addLine(text, cls) {
+      const div = document.createElement("div");
+      if (cls) div.className = cls;
+      div.textContent = text;
+      logEl.appendChild(div);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setJoined(joined) {
+      nameEl.disabled = joined;
+      joinBtn.disabled = joined;
+      leaveBtn.disabled = !joined;
+      msgEl.disabled = !joined;
+      sendBtn.disabled = !joined;
+    }
+
+    function connectAndJoin() {
+      const name = nameEl.value.trim();
+      if (!name) { addLine("Enter a username", "err"); return; }
+      ws = new WebSocket(WS_URL);
+      ws.onopen = () => ws.send(JSON.stringify({ type: "join", name }));
+      ws.onmessage = (ev) => {
+        let data;
+        try { data = JSON.parse(ev.data); } catch { addLine(ev.data); return; }
+        if (data.type === "system") addLine(data.text, "sys");
+        else if (data.type === "error") addLine(data.text, "err");
+        else if (data.type === "chat") addLine(data.name + ": " + data.text);
+      };
+      ws.onclose = () => { addLine("Disconnected", "sys"); setJoined(false); };
+      ws.onerror = () => addLine("Connection error — is the server running?", "err");
+      setJoined(true);
+    }
+
+    joinBtn.onclick = connectAndJoin;
+    leaveBtn.onclick = () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "leave" }));
+        ws.close();
+      }
+      setJoined(false);
+    };
+    sendBtn.onclick = () => {
+      const text = msgEl.value.trim();
+      if (!text || !ws) return;
+      ws.send(JSON.stringify({ type: "chat", text }));
+      msgEl.value = "";
+    };
+    msgEl.addEventListener("keydown", (e) => { if (e.key === "Enter") sendBtn.click(); });
+  </script>
+</body>
+</html>
